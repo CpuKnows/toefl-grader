@@ -1,9 +1,9 @@
 ###############################################################################
-# File: pos_tagger.py
-# Author: John Maxwell - jmaxwe3@uic.edu
-# Date: 2018-03-04
+# File: create_parses.py
+# Author: John Maxwell
+# Date: 2018-04-04
 #
-# POS Tagger training on mini-corpus
+# Create a file with constituency parses for each essay
 ###############################################################################
 import re
 import pandas as pd
@@ -95,6 +95,7 @@ if __name__ == "__main__":
 	essay_key['num_sentences'] = num_sentences
 	essay_key['parsed_essay'] = parsed_essays
 
+	# Output csv
 	essay_key[['filename', 'num_sentences', 'parsed_essay']].to_csv(
 		'../data/essays_dataset/index_with_parse.csv', 
 		index=False)
