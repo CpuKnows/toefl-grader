@@ -171,7 +171,7 @@ def find_word(orig_text, word):
 		else:
 			return matches[choice][0]
 
-def check_spelling(dictionary, parsed_sentences, orig_text,verbose=True):
+def check_spelling(dicc, parsed_sentences, orig_text,verbose=True):
 	false_positives = ['-LRB-','-RRB-',"''",',','\'s','\\','n\'t',':'';','!','?','\'m','\'d','\'\'','??','-','(',')','\'ve','\'','\'re','!','e.g.','[',']','_','>>','>','<','<<','!!','"','``']
 	"""Check the spelling of tagged words on an essay
 	and return the list of misspelling words with their tags 
@@ -204,22 +204,21 @@ def check_spelling(dictionary, parsed_sentences, orig_text,verbose=True):
 		print()
 	return wrong_words
 
+def calculate_grade(scale, actual_score, grading_system):
+	"""
+		scale = an array with the scale distribution [1,2,3,4,5]
+		actual_score = is the score assigned after distribution
+		grading_system= 1to5 or 4to0
+	"""
+	g_result = 0
+	if(grading_system=="1to5"):
+		g_result = 1 if actual_score<=scale[0] else 2 if actual_score<=scale[1] else 3 if actual_score<=scale[2] else 4 if actual_score<=scale[3] else 5
+	elif(grading_system=="4to0"):
+		g_result = 0 if actual_score<=scale[0] else 1 if actual_score<=scale[1] else 2 if actual_score<=scale[2] else 3 if actual_score<=scale[3] else 4
+	return g_result
 
-###############################################################################
-# Main
-###############################################################################
-if __name__ == "__main__":
-	# Careful! CoreNLPTagger, CoreNLPPOSTagger, and CoreNLPNERTagger will all be replaced in the next NLTK version (3.2.6)
-	parser = CoreNLPParser(url='http://localhost:9000')
-	#pos_tagger = CoreNLPPOSTagger(url='http://localhost:9000')
-	#ner_tagger = CoreNLPNERTagger(url='http://localhost:9000')
-	pos_tagger = CoreNLPTagger(tagtype='pos', url='http://localhost:9000')
-	ner_tagger = CoreNLPTagger(tagtype='ner', url='http://localhost:9000')
-	# Parser
-	parser = CoreNLPParser(url='http://localhost:9000')
-	# Get essays
-	essay_key = pd.read_csv('../input/training/index.csv', sep=';')
 
+def process_essays(essay_key):
 	essays = list()
 	for filename in essay_key['filename']:
 		with open('../input/training/essays/'+filename, 'r') as f:
@@ -255,10 +254,166 @@ if __name__ == "__main__":
 	#essay_key['wrong words'] = errors_words
 	essay_key['mispelling rate'] = mispelling_rate
 
-	# Output csv
-	essay_key[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate']].to_csv(
-		'../output/result.csv', 
-		index=False)
+	"""essay_key = pd.read_csv('../output/result.csv', sep=',')
 
+	print(essay_key.head())
+
+	"""
+	# Calculate the standard deviation for each column
+	std_words = np.std(essay_key['words'])
+	std_sentences = np.std(essay_key['sentences'])
+	std_constituents = np.std(essay_key['constituents'])
+	std_mispelling_words = np.std(essay_key['mispelling words'])
+	std_mispelling_words_rate = np.std(essay_key['mispelling rate'])
+
+	# Get the mean for each column
+	mean_words = np.mean(essay_key['words'])
+	mean_sentences = np.mean(essay_key['sentences'])
+	mean_constituents = np.mean(essay_key['constituents'])
+	mean_mispelling_words = np.mean(essay_key['mispelling words'])
+	mean_mispelling_words_rate = np.mean(essay_key['mispelling rate'])
+
+	print("STDS")
+	print(std_words, std_sentences, std_constituents,std_mispelling_words)
+
+	print("MEANS")
+	print(mean_words, mean_sentences, mean_constituents, mean_mispelling_words, mean_mispelling_words_rate)
+
+	#calculate score distribution formula
+
+	#variables
+	z_words = list()
+	z_sentences = list()
+	z_constituents = list()
+	z_mispelling_words = list()
+	z_mispelling_words_rate = list()
+
+	#apply the distribution for every column
+	for index, row in essay_key.iterrows():
+		z_words.append((row['words']-mean_words)/std_words)
+		z_sentences.append((row['sentences']-mean_sentences)/std_sentences)
+		z_constituents.append((row['constituents']-mean_constituents)/std_constituents)
+		z_mispelling_words.append((row['mispelling words']-mean_mispelling_words)/std_mispelling_words)
+		z_mispelling_words_rate.append((row['mispelling rate']-mean_mispelling_words_rate)/std_mispelling_words_rate)
+
+	essay_key['z_words'] = z_words
+	essay_key['z_sentences'] = z_sentences
+	essay_key['z_constituents'] = z_constituents
+	essay_key['z_mispelling_words'] =z_mispelling_words
+	essay_key['z_mispelling_words_rate'] = z_mispelling_words_rate
+
+	#calculate scale to assign scoring
+	#scale, the number of possible scores to be assigned
+	scale = 5
+	max_z_words = np.amax(z_words)
+	min_z_words = np.amin(z_words)
+
+	pivot = (max_z_words-min_z_words)/scale
+	#scores for words from 1 to 5
+	scale_words = [min_z_words+pivot,min_z_words+(pivot*2),min_z_words+(pivot*3),min_z_words+(pivot*4),min_z_words+(pivot*5)]
+
+	#score for sentences from 1 to 5
+	max_z_sentences = np.amax(z_sentences)
+	min_z_sentences = np.amin(z_sentences)
+	pivot = (max_z_sentences-min_z_sentences)/scale
+
+	scale_sentences = [min_z_sentences+pivot, min_z_sentences+(pivot*2),min_z_sentences+(pivot*3),min_z_sentences+(pivot*4),min_z_sentences+(pivot*5)]
+
+	#score for constituents from 1 to 5
+	max_z_constituents = np.amax(z_constituents)
+	min_z_constituents = np.amin(z_constituents)
+	pivot = (max_z_constituents-min_z_constituents)/scale
+
+	scale_constituents = [min_z_constituents+pivot, min_z_constituents+(pivot*2),min_z_constituents+(pivot*3),min_z_constituents+(pivot*4),min_z_constituents+(pivot*5)]
+
+	#score for mispelling words from 4 down to 0
+	max_z_mispelling = np.amax(z_mispelling_words)
+	min_z_mispelling = np.amin(z_mispelling_words)
+	pivot = (max_z_mispelling-min_z_mispelling)/scale
+
+	scale_mispelling = [min_z_mispelling+pivot, min_z_mispelling+(pivot*2),min_z_mispelling+(pivot*3),min_z_mispelling+(pivot*4),min_z_mispelling+(pivot*5)]
+
+	#score for mispelling words rate from 4 down to 0
+	max_z_mispelling_rate = np.amax(z_mispelling_words_rate)
+	min_z_mispelling_rate = np.amin(z_mispelling_words_rate)
+	pivot = (max_z_mispelling_rate-min_z_mispelling_rate)/scale
+
+	scale_mispelling_rate = [min_z_mispelling_rate+pivot, min_z_mispelling_rate+(pivot*2),min_z_mispelling_rate+(pivot*3),min_z_mispelling_rate+(pivot*4),min_z_mispelling_rate+(pivot*5)]
+
+	print(scale_words)
+	print(scale_sentences)
+	print(scale_constituents)
+	print(scale_mispelling)
+	print(scale_mispelling_rate)
+
+	#assign scores
+	score_words = list()
+	score_sentences = list()
+	score_constituents = list()
+	score_mispelling = list()
+	score_mispelling_rate = list()
+	#apply the distribution for every column
+	for index, row in essay_key.iterrows():
+		score_words.append(calculate_grade(scale_words, row['z_words'], "1to5"))
+		score_sentences.append(calculate_grade(scale_sentences, row['z_sentences'], "1to5"))
+		score_constituents.append(calculate_grade(scale_constituents, row['z_constituents'], "1to5"))
+		score_mispelling.append(calculate_grade(scale_mispelling, row['z_mispelling_words'], "4to0"))
+		score_mispelling_rate.append(calculate_grade(scale_mispelling_rate, row['z_mispelling_words_rate'], "4to0"))
+
+	essay_key['words grade'] = score_words
+	essay_key['sentences grade'] = score_sentences
+	essay_key['constituents grade'] = score_constituents
+	essay_key['spelling grade'] = score_mispelling
+	essay_key['spelling grade rate'] = score_mispelling_rate
+
+	essay_key['a'] = (essay_key['words grade'] + essay_key['sentences grade'] +essay_key['constituents grade'])/3
+	essay_key['b'] = (essay_key['spelling grade'] + essay_key['spelling grade rate']) /2
+
+	essay_key['2ab'] = (2*essay_key['a'])-essay_key['b']
+
+	return essay_key
+###############################################################################
+# Main
+###############################################################################
+if __name__ == "__main__":
+	# Careful! CoreNLPTagger, CoreNLPPOSTagger, and CoreNLPNERTagger will all be replaced in the next NLTK version (3.2.6)
+	parser = CoreNLPParser(url='http://localhost:9000')
+	#pos_tagger = CoreNLPPOSTagger(url='http://localhost:9000')
+	#ner_tagger = CoreNLPNERTagger(url='http://localhost:9000')
+	pos_tagger = CoreNLPTagger(tagtype='pos', url='http://localhost:9000')
+	ner_tagger = CoreNLPTagger(tagtype='ner', url='http://localhost:9000')
+	# Parser
+	parser = CoreNLPParser(url='http://localhost:9000')
+	# Get essays
+	essay_key_df = pd.read_csv('../input/training/index2.csv', sep=',')
+
+	essay_key_df = process_essays(essay_key_df)
+
+	high_grades = essay_key_df.loc[essay_key_df['grade'] == 'high']
+	low_grades = essay_key_df.loc[essay_key_df['grade'] == 'low']
+
+	high_cut = (np.amin(high_grades['2ab'])+np.amax(low_grades['2ab']))/2
+
+	print("HIGH_CUT")
+	print(high_cut)
+
+	print('Grading Testing Essays')
+
+	testing_df = pd.read_csv('../input/testing/index22.csv', sep=',')
+	testing_df = process_essays(testing_df)
+
+	testing_grades = list()
+
+	for g_2ab in testing_df['2ab']:
+		if(g_2ab>= high_cut):
+			testing_grades.append('high')
+		else:
+			testing_grades.append('low')
+	testing_df['final_grade'] = testing_grades
+
+	# Output csv
+	testing_df[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate','z_words', 'z_sentences','z_constituents','z_mispelling_words','z_mispelling_words_rate','words grade', 'sentences grade','constituents grade','spelling grade','spelling grade rate','a','b','2ab','final_grade']].to_csv(
+		'../output/final_grades.csv', 
+		index=False)
 	print("***************Process Finished!*********************")
 
