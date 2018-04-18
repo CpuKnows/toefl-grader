@@ -69,13 +69,12 @@ def str_to_trees(tree_str):
 if __name__ == "__main__":
 	# Parser
 	parser = CoreNLPParser(url='http://localhost:9000')
-	
 	# Get essays
-	essay_key = pd.read_csv('../data/essays_dataset/index.csv', sep=';')
+	essay_key = pd.read_csv('D:/UIC/Spring 2018/NLP/Project/essays_dataset/index.csv', sep=';')
 
 	essays = list()
 	for filename in essay_key['filename']:
-	    with open('../data/essays_dataset/essays/'+filename, 'r') as f:
+	    with open('D:/UIC/Spring 2018/NLP/Project/essays_dataset/essays/'+filename, 'r') as f:
 	        essays.append(f.read().strip())
 	        
 	essay_key['essay'] = essays
@@ -83,6 +82,7 @@ if __name__ == "__main__":
 	# Constituency parse for each essay
 	parsed_essays = list()
 	num_sentences = list()
+	senteces_length = list()
 	for essay in essay_key['essay']:
 		# Parse the essay
 		trees = constituency_parse(parser, essay)
@@ -91,11 +91,14 @@ if __name__ == "__main__":
 		# String of parsed sentences
 		trees_str = tree_to_str(trees)
 		parsed_essays.append(trees_str)
+		sent_text = nltk.sent_tokenize(essay)
+		senteces_length.append(len(sent_text))	
 
 	essay_key['num_sentences'] = num_sentences
 	essay_key['parsed_essay'] = parsed_essays
+	essay_key['full_stop_sentences'] = senteces_length
 
 	# Output csv
-	essay_key[['filename', 'num_sentences', 'parsed_essay']].to_csv(
-		'../data/essays_dataset/index_with_parse.csv', 
+	essay_key[['filename','grade','full_stop_sentences', 'num_sentences', 'parsed_essay']].to_csv(
+		'D:/UIC/Spring 2018/NLP/Project/essays_dataset/index_with_parse.csv', 
 		index=False)
