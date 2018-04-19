@@ -464,7 +464,7 @@ def process_essays(essay_key):
 
 	essay_key['a'] = (essay_key['words grade'] + essay_key['sentences grade'] +essay_key['constituents grade'])/3
 	essay_key['b'] = (essay_key['spelling grade'] + essay_key['spelling grade rate']) /2
-	essay_key['c'] = (essay_key['z_agreement_errors']+essay_key['z_agreement_errors_rate'])/2
+	essay_key['c'] = (essay_key['agreement_errors_grade']+essay_key['agreement_errors_rate_grade'])/2
 	essay_key['2ab'] = (2*essay_key['a'])-essay_key['b']+essay_key['c']
 	return essay_key
 ###############################################################################
@@ -509,7 +509,7 @@ if __name__ == "__main__":
 
 	# Output csv
 	testing_df[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate','agreement_errors','agreement_errors_rate','z_words', 'z_sentences','z_constituents','z_mispelling_words','z_mispelling_words_rate','z_agreement_errors','z_agreement_errors_rate','words grade', 'sentences grade','constituents grade','spelling grade','spelling grade rate','agreement_errors_grade','agreement_errors_rate_grade','a','b','c','2ab','final_grade']].to_csv(
-		'../output/final_grades.csv', 
+		'../output/final_grades.txt', 
 		index=False)
 	print("***************Process Finished!*********************")
 	
