@@ -24,7 +24,7 @@ nltk.download('maxent_ne_chunker')
 nltk.download('treebank')
 
 
-testing_files_path_index = '../input/testing/testingdataset/index.csv'
+testing_files_path_index = '../input/testing/index.csv'
 training_files_path_index = '../input/training/index.csv'
 
 # Functions
