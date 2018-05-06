@@ -23,6 +23,10 @@ nltk.download('averaged_perceptron_tagger')
 nltk.download('maxent_ne_chunker')
 nltk.download('treebank')
 
+
+testing_files_path_index = '../input/testing/testingdataset/index.csv'
+training_files_path_index = '../input/training/index.csv'
+
 # Functions
 # Altered behavior of NLTK so CoreNLP performs sentence splits
 def constituency_parse(parser, sentences, return_parse_obj=False):
@@ -48,6 +52,7 @@ def constituency_parse(parser, sentences, return_parse_obj=False):
 			parses.append(parse)
 		return parses
 
+# return sentences with thei correspondent POS tags
 def pos_tags(tagger, sentences):
 	"""Tags sentences with POS tags. Returns a list of (word, tag, start index, end index) tuples
 
@@ -71,6 +76,8 @@ def str_to_trees(tree_str):
 	d = "(ROOT"
 	return  [(d+sent).strip() for sent in tree_str.split(d) if sent]
 
+
+# annotate the length components of an essay
 def num_sentence_annotation(parsed_data, orig_text, verbose=True):
 	sentences = dict()
 	sentences['indices'] = list()
@@ -93,6 +100,8 @@ def num_sentence_annotation(parsed_data, orig_text, verbose=True):
 		print()
 	return sentences
 
+
+# annotate the length components of an essay
 def length_annotation(parsed_data, orig_text, verbose=True):
 	sentences = dict()
 	sentences['indices'] = list()
@@ -124,6 +133,7 @@ def length_annotation(parsed_data, orig_text, verbose=True):
 		print()
 	return sentences
 
+# check the sanity of the number of sentences and the indexes
 def sentence_sanity_check(sentence_dict):
 	error = False
 	
@@ -147,6 +157,7 @@ def sentence_sanity_check(sentence_dict):
 	if not error:
 		print('No errors')
 
+#function to find a word on an essay
 def find_word(orig_text, word):
 	matches = list()
 	for m in re.finditer(word, orig_text, flags=re.I):
@@ -177,6 +188,7 @@ def find_word(orig_text, word):
 		else:
 			return matches[choice][0]
 
+# function to check spelling errors on the essays
 def check_spelling(dicc, parsed_sentences, orig_text,verbose=True):
 	false_positives = ['-LRB-','-RRB-',"''",',','\'s','\\','n\'t',':'';','!','?','\'m','\'d','\'\'','??','-','(',')','\'ve','\'','\'re','!','e.g.','[',']','_','>>','>','<','<<','!!','"','``']
 	"""Check the spelling of tagged words on an essay
@@ -210,6 +222,9 @@ def check_spelling(dicc, parsed_sentences, orig_text,verbose=True):
 		print()
 	return wrong_words
 
+
+# function to check subject and verb agreement
+# c.ii
 def subject_verb_agreement_check(parsed_sentences, parsed_constituents, sentences_indexes, original_text):
 	subject_verb_agreement_errors = list()
 	vbz_agreement = ['EX', 'NN','NNP','PRP','WDT']
@@ -248,6 +263,8 @@ def subject_verb_agreement_check(parsed_sentences, parsed_constituents, sentence
 						if(subject_pos not in vb_agreement_exceptions):
 							subject_verb_agreement_errors.append((s_index,error_sentence,subject_token[0][0],subject_pos,token[0],token[1]))
 	return subject_verb_agreement_errors
+
+#function to calculate the grading scale for each of the features
 def calculate_grade(scale, actual_score, grading_system):
 	"""
 		scale = an array with the scale distribution [1,2,3,4,5]
@@ -264,15 +281,46 @@ def calculate_grade(scale, actual_score, grading_system):
 	return g_result
 
 
-def process_essays(essay_key):
+# count the number for sentence formation errors taking into account the parser
+# pattern: FRAG and SBAR without S
+def check_sentence_formation(parsed_constituents):
+	essay_formation_errors = 0
+	for s in parsed_constituents['sentences']:
+		s_parses = s['parse'].replace('\r\n','').replace(' ','').strip()
+		if 'FRAG' in s_parses and 'SBAR' in s_parses and 'ROOT(S' not in s_parses:
+			essay_formation_errors = essay_formation_errors + 1
+		elif 'FRAG' in s_parses and 'ROOT(S' not in s_parses:
+			essay_formation_errors = essay_formation_errors + 1
+		elif 'SBAR' in s_parses and 'ROOT(S' not in s_parses:
+			essay_formation_errors = essay_formation_errors + 1
+	return essay_formation_errors
+
+# call the function to load all the essays
+def process_essays(load_testing_files=False):
+
+	print("... reading training index.csv file")
+	essay_key = pd.read_csv(training_files_path_index, sep=';')
+	testing_essay_key = pd.DataFrame()
+	# load training data
 	essays = list()
 	for filename in essay_key['filename']:
 		with open('../input/training/essays/'+filename, 'r') as f:
 			essays.append(f.read().strip())
 			
 	essay_key['essay'] = essays
-
-
+	
+	# load testing data
+	if load_testing_files==True:
+		essay_key = essay_key.drop('grade', axis=1)
+		print("... reading testing index.csv file")
+		testing_essay_key = pd.read_csv(testing_files_path_index, sep=';')
+		essays_aux = list()
+		for filename in testing_essay_key['filename']:
+			with open('../input/testing/testingdataset/essays/'+filename, 'r') as f:
+				essays_aux.append(f.read().strip())
+		testing_essay_key['essay'] = essays_aux
+		essay_key = pd.concat([essay_key,testing_essay_key],ignore_index=True)
+	
 	# Parse for each essay
 	dicc = dictionary("en_US")
 	errors = list()
@@ -284,6 +332,9 @@ def process_essays(essay_key):
 	agreement_error_list = list()
 	agreement_error_num = list()
 	agreement_error_num_rate = list()
+	formation_errors = list()
+
+
 	print("***************Processing Files*********************")
 	essay_i = 0
 	for essay in essay_key['essay']:
@@ -295,6 +346,8 @@ def process_essays(essay_key):
 		sentences_count.append(output['num_sentences'])
 		constituents_count.append(output['num_constituents'])	
 		result = check_spelling(dicc, pos_tags(pos_tagger, essay), essay, verbose=False)
+		# Formation errors
+		f_errors = check_sentence_formation(parsed_constituents)
 		errors.append(result['num'])
 		#errors_words.append(result['indices'])
 		mispelling_rate.append((result['num']*100)/output['words'])
@@ -307,6 +360,7 @@ def process_essays(essay_key):
 		agreement_error_list.append(s_v_agreement)
 		agreement_error_num.append(len(s_v_agreement))
 		agreement_error_num_rate.append(len(s_v_agreement)*100/output['num_sentences'])
+		formation_errors.append(f_errors)
 
 	essay_key['words'] = words_count
 	essay_key['sentences'] = sentences_count
@@ -317,6 +371,7 @@ def process_essays(essay_key):
 	essay_key['subject_verb_agreement'] = agreement_error_list
 	essay_key['agreement_errors'] = agreement_error_num
 	essay_key['agreement_errors_rate'] = agreement_error_num_rate
+	essay_key['formation_errors'] = formation_errors
 
 	# Calculate the standard deviation for each column
 	std_words = np.std(essay_key['words'])
@@ -326,6 +381,7 @@ def process_essays(essay_key):
 	std_mispelling_words_rate = np.std(essay_key['mispelling rate'])
 	std_agreement_errors = np.std(essay_key['agreement_errors'])
 	std_agreement_errors_rate = np.std(essay_key['agreement_errors_rate'])
+	std_formation_errors_rate = np.std(essay_key['formation_errors'])
 
 	# Get the mean for each column
 	mean_words = np.mean(essay_key['words'])
@@ -335,6 +391,7 @@ def process_essays(essay_key):
 	mean_mispelling_words_rate = np.mean(essay_key['mispelling rate'])
 	mean_agreement_errors = np.mean(essay_key['agreement_errors'])
 	mean_agreement_errors_rate = np.mean(essay_key['agreement_errors_rate'])
+	mean_formation_errors_rate = np.mean(essay_key['formation_errors'])
 	#print("STDS")
 	#print(std_words, std_sentences, std_constituents,std_mispelling_words)
 
@@ -351,6 +408,7 @@ def process_essays(essay_key):
 	z_mispelling_words_rate = list()
 	z_agreement_errors = list()
 	z_agreement_errors_rate = list()
+	z_formation_errors_rate = list()
 	#apply the distribution for every column
 	for index, row in essay_key.iterrows():
 		z_words.append((row['words']-mean_words)/std_words)
@@ -359,7 +417,8 @@ def process_essays(essay_key):
 		z_mispelling_words.append((row['mispelling words']-mean_mispelling_words)/std_mispelling_words)
 		z_mispelling_words_rate.append((row['mispelling rate']-mean_mispelling_words_rate)/std_mispelling_words_rate)
 		z_agreement_errors.append((row['agreement_errors']-mean_agreement_errors)/std_agreement_errors)
-		z_agreement_errors_rate.append((row['agreement_errors_rate']-mean_agreement_errors_rate)/mean_agreement_errors_rate)
+		z_agreement_errors_rate.append((row['agreement_errors_rate']-mean_agreement_errors_rate)/std_agreement_errors_rate)
+		z_formation_errors_rate.append((row['formation_errors']-mean_formation_errors_rate)/std_formation_errors_rate)
 
 	essay_key['z_words'] = z_words
 	essay_key['z_sentences'] = z_sentences
@@ -368,7 +427,7 @@ def process_essays(essay_key):
 	essay_key['z_mispelling_words_rate'] = z_mispelling_words_rate
 	essay_key['z_agreement_errors'] = z_agreement_errors
 	essay_key['z_agreement_errors_rate'] = z_agreement_errors_rate
-
+	essay_key['z_formation_errors_rate'] = z_formation_errors_rate
 	#calculate scale to assign scoring
 	#scale, the number of possible scores to be assigned
 	scale = 5
@@ -420,12 +479,11 @@ def process_essays(essay_key):
 
 	scale_agreement_errors_rate = [min_z_agreement_errors_rate+pivot, min_z_agreement_errors_rate+(pivot*2),min_z_agreement_errors_rate+(pivot*3),min_z_agreement_errors_rate+(pivot*4),min_z_agreement_errors_rate+(pivot*5)]
 
-	print(scale_words)
-	print(scale_sentences)
-	print(scale_constituents)
-	print(scale_mispelling)
-	print(scale_mispelling_rate)
+	max_z_formation_errors_rate = np.amax(z_formation_errors_rate)
+	min_z_formation_errors_rate = np.amin(z_formation_errors_rate)
+	pivot = (max_z_formation_errors_rate-min_z_formation_errors_rate) / scale
 
+	scale_formation_errors_rate = [min_z_formation_errors_rate+pivot, min_z_formation_errors_rate+(pivot*2), min_z_formation_errors_rate+(pivot*3), min_z_formation_errors_rate+(pivot*4),min_z_formation_errors_rate+(pivot*5)]
 	#assign scores
 	score_words = list()
 	score_sentences = list()
@@ -434,6 +492,7 @@ def process_essays(essay_key):
 	score_mispelling_rate = list()
 	score_agreement_errors = list()
 	score_agreement_errors_rate = list()
+	score_formation_errors_rate = list()
 
 	#apply the distribution for every column
 	for index, row in essay_key.iterrows():
@@ -444,6 +503,7 @@ def process_essays(essay_key):
 		score_mispelling_rate.append(calculate_grade(scale_mispelling_rate, row['z_mispelling_words_rate'], "4to0"))
 		score_agreement_errors.append(calculate_grade(scale_agreement_errors, row['z_agreement_errors'], "5to1"))
 		score_agreement_errors_rate.append(calculate_grade(scale_agreement_errors_rate, row['z_agreement_errors_rate'],"5to1"))
+		score_formation_errors_rate.append(calculate_grade(scale_formation_errors_rate, row['z_formation_errors_rate'], "5to1"))
 
 	essay_key['words grade'] = score_words
 	essay_key['sentences grade'] = score_sentences
@@ -452,15 +512,23 @@ def process_essays(essay_key):
 	essay_key['spelling grade rate'] = score_mispelling_rate
 	essay_key['agreement_errors_grade'] = score_agreement_errors
 	essay_key['agreement_errors_rate_grade'] = score_agreement_errors_rate
+	essay_key['formation_errors_rate_grade'] = score_formation_errors_rate
 
 	essay_key['a'] = np.round((essay_key['words grade'] + essay_key['sentences grade'] +essay_key['constituents grade'])/3)
 	essay_key['b'] = np.round((essay_key['spelling grade'] + essay_key['spelling grade rate']) /2)
 	essay_key['c'] = np.round((essay_key['agreement_errors_grade']+essay_key['agreement_errors_rate_grade'])/2)
 	essay_key['cii'] = 0
-	essay_key['ciii'] = 0
+	essay_key['ciii'] = np.round((essay_key['formation_errors_rate_grade']))
 	essay_key['di'] = 0
 	essay_key['dii'] = 0
-	essay_key['2ab'] = (2*essay_key['a'])-essay_key['b']+essay_key['c']
+
+
+	# 2*a−b+c.i+c.ii+ 2*c.iii+ 2*d.i[+3*d.ii]
+	essay_key['2ab'] = (2*essay_key['a'])-essay_key['b']+essay_key['c']+essay_key['cii']+(2*essay_key['ciii'])+ (2*essay_key['di'])+(3*essay_key['dii'])
+
+	if load_testing_files==True:
+		essay_key = pd.merge(left=testing_essay_key,right=essay_key, left_on='filename', right_on='filename')
+
 	return essay_key
 ###############################################################################
 # Main
@@ -478,11 +546,9 @@ ner_tagger = CoreNLPTagger(tagtype='ner', url='http://localhost:9000')
 # Parser
 parser = CoreNLPParser(url='http://localhost:9000')
 # Get essays
-print("... reading index.csv file")
-essay_key_df = pd.read_csv('../input/training/index.csv', sep=';')
 
 print("... starting files processing")
-essay_key_df = process_essays(essay_key_df)
+essay_key_df = process_essays(load_testing_files=False)
 
 
 high_grades = essay_key_df.loc[essay_key_df['grade'] == 'high']
@@ -495,8 +561,7 @@ print(high_cut)
 
 print('Grading Testing Essays')
 
-testing_df = pd.read_csv('../input/testing/index.csv', sep=';')
-testing_df = process_essays(testing_df)
+testing_df = process_essays(load_testing_files=True)
 
 testing_grades = list()
 
@@ -505,14 +570,14 @@ for g_2ab in testing_df['2ab']:
 		testing_grades.append('high')
 	else:
 		testing_grades.append('low')
-testing_df['final_grade'] = 'uknown'
+testing_df['final_grade'] = testing_grades
 
 # Output csv
 #testing_df[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate','agreement_errors','agreement_errors_rate','z_words', 'z_sentences','z_constituents','z_mispelling_words','z_mispelling_words_rate','z_agreement_errors','z_agreement_errors_rate','words grade', 'sentences grade','constituents grade','spelling grade','spelling grade rate','agreement_errors_grade','agreement_errors_rate_grade','a','b','c','2ab','final_grade']].to_csv(
 #	'../output/final_grades.txt', 
 #	index=False)
-testing_df[['filename','a','b','c','cii','ciii','di','dii','2ab','final_grade']].to_csv(
-	'../output/results.txt', sep=';',
+testing_df[['filename','final_grade']].to_csv(
+	'../output/results.csv', sep=';',
 	index=False)
 print("***************Process Finished!*********************")
 	
