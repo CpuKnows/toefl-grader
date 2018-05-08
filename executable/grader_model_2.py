@@ -190,7 +190,8 @@ def find_word(orig_text, word):
 
 # function to check spelling errors on the essays
 def check_spelling(dicc, parsed_sentences, orig_text,verbose=True):
-	false_positives = ['-LRB-','-RRB-',"''",',','\'s','\\','n\'t',':'';','!','?','\'m','\'d','\'\'','??','-','(',')','\'ve','\'','\'re','!','e.g.','[',']','_','>>','>','<','<<','!!','"','``']
+	false_positives = ['-LRB-','-RRB-',"''",',','\'s','\\','n\'t',':'';','!','?','\'m','\'d','\'\'','??','-','(',')',
+					   '\'ve','\'','\'re','!','e.g.','[',']','_','>>','>','<','<<','!!','"','``']
 	"""Check the spelling of tagged words on an essay
 	and return the list of misspelling words with their tags 
 	and indexes of begining and end of those words"""
@@ -282,18 +283,68 @@ def calculate_grade(scale, actual_score, grading_system):
 
 
 # count the number for sentence formation errors taking into account the parser
-# pattern: FRAG and SBAR without S
 def check_sentence_formation(parsed_constituents):
-	essay_formation_errors = 0
-	for s in parsed_constituents['sentences']:
-		s_parses = s['parse'].replace('\r\n','').replace(' ','').strip()
-		if 'FRAG' in s_parses and 'SBAR' in s_parses and 'ROOT(S' not in s_parses:
-			essay_formation_errors = essay_formation_errors + 1
-		elif 'FRAG' in s_parses and 'ROOT(S' not in s_parses:
-			essay_formation_errors = essay_formation_errors + 1
-		elif 'SBAR' in s_parses and 'ROOT(S' not in s_parses:
-			essay_formation_errors = essay_formation_errors + 1
-	return essay_formation_errors
+	"""Finds sentence formation errors in a parsed essay
+
+	parsed_constituents (str): CoreNLP constituency parser output
+	RETURNS (int): Number of sentence formation errors in the essay"""
+	error_count = 0
+	for sent_obj in parsed_constituents['sentences']:
+		sent = re.sub('[\s]+', ' ', sent_obj['parse'])
+		root_node = create_tree(sent)
+		
+		# fragment
+		if 'FRAG' in root_node:
+			error_count += 1
+		
+		# SBAR errors
+		for node in root_node.get_descendants('SBAR'):
+			# SBAR without S
+			if len(list(node.get_ancestors('S'))) == 0:
+				error_count += 1
+				
+			# 'because' with VBG
+			if (node.children[0].label == 'IN' and node.children[0].word.lower() == 'because' and 
+					node_list_contains(node.children[0].get_right_siblings(), 'S')):
+				# Get first leftmost VP
+				vp_node = node.get_descendants('VP').__next__()
+				if 'VBG' in [c.label for c in vp_node.children]:
+					error_count += 1
+
+		# Comma splice
+		for node in root_node.get_descendants(','):
+			if (node_list_contains(node.get_left_siblings(), 'S') and
+					node_list_contains(node.get_right_siblings(), 'S')):
+				error_count += 1
+
+		# JJR error
+		def _jjr_error(sent_obj):
+			jjr_flag = False
+			for token in sent_obj['tokens']:
+				if not jjr_flag and token['pos'] == 'JJR':
+					jjr_flag = True
+				elif jjr_flag and token['pos'].startswith('V'):
+					return 1
+				else:
+					jjr_flag = False
+			return 0
+		error_count += _jjr_error(sent_obj)
+
+		# JJS error
+		def _jjs_error(sent_obj):
+			jjs_flag = False
+			for token in sent_obj['tokens']:
+				if not jjs_flag and token['pos'] == 'JJS':
+					jjs_flag = True
+				elif jjs_flag and token['pos'].startswith('V'):
+					return 1
+				else:
+					jjs_flag = False
+			return 0
+		error_count += _jjs_error(sent_obj)
+		
+	return error_count
+
 
 # call the function to load all the essays
 def process_essays(load_testing_files=False):
@@ -436,54 +487,62 @@ def process_essays(load_testing_files=False):
 
 	pivot = (max_z_words-min_z_words)/scale
 	#scores for words from 1 to 5
-	scale_words = [min_z_words+pivot,min_z_words+(pivot*2),min_z_words+(pivot*3),min_z_words+(pivot*4),min_z_words+(pivot*5)]
+	scale_words = [min_z_words+pivot,min_z_words+(pivot*2),min_z_words+(pivot*3),
+				   min_z_words+(pivot*4),min_z_words+(pivot*5)]
 
 	#score for sentences from 1 to 5
 	max_z_sentences = np.amax(z_sentences)
 	min_z_sentences = np.amin(z_sentences)
 	pivot = (max_z_sentences-min_z_sentences)/scale
 
-	scale_sentences = [min_z_sentences+pivot, min_z_sentences+(pivot*2),min_z_sentences+(pivot*3),min_z_sentences+(pivot*4),min_z_sentences+(pivot*5)]
+	scale_sentences = [min_z_sentences+pivot, min_z_sentences+(pivot*2),min_z_sentences+(pivot*3),
+					   min_z_sentences+(pivot*4),min_z_sentences+(pivot*5)]
 
 	#score for constituents from 1 to 5
 	max_z_constituents = np.amax(z_constituents)
 	min_z_constituents = np.amin(z_constituents)
 	pivot = (max_z_constituents-min_z_constituents)/scale
 
-	scale_constituents = [min_z_constituents+pivot, min_z_constituents+(pivot*2),min_z_constituents+(pivot*3),min_z_constituents+(pivot*4),min_z_constituents+(pivot*5)]
+	scale_constituents = [min_z_constituents+pivot, min_z_constituents+(pivot*2),min_z_constituents+(pivot*3),
+						  min_z_constituents+(pivot*4),min_z_constituents+(pivot*5)]
 
 	#score for mispelling words from 4 down to 0
 	max_z_mispelling = np.amax(z_mispelling_words)
 	min_z_mispelling = np.amin(z_mispelling_words)
 	pivot = (max_z_mispelling-min_z_mispelling)/scale
 
-	scale_mispelling = [min_z_mispelling+pivot, min_z_mispelling+(pivot*2),min_z_mispelling+(pivot*3),min_z_mispelling+(pivot*4),min_z_mispelling+(pivot*5)]
+	scale_mispelling = [min_z_mispelling+pivot, min_z_mispelling+(pivot*2),min_z_mispelling+(pivot*3),
+						min_z_mispelling+(pivot*4),min_z_mispelling+(pivot*5)]
 
 	#score for mispelling words rate from 4 down to 0
 	max_z_mispelling_rate = np.amax(z_mispelling_words_rate)
 	min_z_mispelling_rate = np.amin(z_mispelling_words_rate)
 	pivot = (max_z_mispelling_rate-min_z_mispelling_rate)/scale
 
-	scale_mispelling_rate = [min_z_mispelling_rate+pivot, min_z_mispelling_rate+(pivot*2),min_z_mispelling_rate+(pivot*3),min_z_mispelling_rate+(pivot*4),min_z_mispelling_rate+(pivot*5)]
+	scale_mispelling_rate = [min_z_mispelling_rate+pivot, min_z_mispelling_rate+(pivot*2),min_z_mispelling_rate+(pivot*3),
+							 min_z_mispelling_rate+(pivot*4),min_z_mispelling_rate+(pivot*5)]
 
 	#score for agreement errors and rates from 5 down to 1
 	max_z_agreement_errors = np.amax(z_agreement_errors)
 	min_z_agreement_errors = np.amin(z_agreement_errors)
 	pivot = (max_z_agreement_errors - min_z_agreement_errors) / scale
 
-	scale_agreement_errors = [min_z_agreement_errors+pivot, min_z_agreement_errors+(pivot*2),min_z_agreement_errors+(pivot*3),min_z_agreement_errors+(pivot*4),min_z_agreement_errors+(pivot*5)]
+	scale_agreement_errors = [min_z_agreement_errors+pivot, min_z_agreement_errors+(pivot*2),min_z_agreement_errors+(pivot*3),
+							  min_z_agreement_errors+(pivot*4),min_z_agreement_errors+(pivot*5)]
 
 	max_z_agreement_errors_rate = np.amax(z_agreement_errors_rate)
 	min_z_agreement_errors_rate = np.amin(z_agreement_errors_rate)
 	pivot = (max_z_agreement_errors_rate-min_z_agreement_errors_rate) / scale 
 
-	scale_agreement_errors_rate = [min_z_agreement_errors_rate+pivot, min_z_agreement_errors_rate+(pivot*2),min_z_agreement_errors_rate+(pivot*3),min_z_agreement_errors_rate+(pivot*4),min_z_agreement_errors_rate+(pivot*5)]
+	scale_agreement_errors_rate = [min_z_agreement_errors_rate+pivot, min_z_agreement_errors_rate+(pivot*2),min_z_agreement_errors_rate+(pivot*3),
+								   min_z_agreement_errors_rate+(pivot*4),min_z_agreement_errors_rate+(pivot*5)]
 
 	max_z_formation_errors_rate = np.amax(z_formation_errors_rate)
 	min_z_formation_errors_rate = np.amin(z_formation_errors_rate)
 	pivot = (max_z_formation_errors_rate-min_z_formation_errors_rate) / scale
 
-	scale_formation_errors_rate = [min_z_formation_errors_rate+pivot, min_z_formation_errors_rate+(pivot*2), min_z_formation_errors_rate+(pivot*3), min_z_formation_errors_rate+(pivot*4),min_z_formation_errors_rate+(pivot*5)]
+	scale_formation_errors_rate = [min_z_formation_errors_rate+pivot, min_z_formation_errors_rate+(pivot*2), min_z_formation_errors_rate+(pivot*3), 
+								   min_z_formation_errors_rate+(pivot*4),min_z_formation_errors_rate+(pivot*5)]
 	#assign scores
 	score_words = list()
 	score_sentences = list()
@@ -573,7 +632,11 @@ for g_2ab in testing_df['2ab']:
 testing_df['final_grade'] = testing_grades
 
 # Output csv
-#testing_df[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate','agreement_errors','agreement_errors_rate','z_words', 'z_sentences','z_constituents','z_mispelling_words','z_mispelling_words_rate','z_agreement_errors','z_agreement_errors_rate','words grade', 'sentences grade','constituents grade','spelling grade','spelling grade rate','agreement_errors_grade','agreement_errors_rate_grade','a','b','c','2ab','final_grade']].to_csv(
+#testing_df[['filename','grade','words', 'sentences', 'constituents','mispelling words', 'mispelling rate',
+# 			 'agreement_errors','agreement_errors_rate','z_words', 'z_sentences','z_constituents','z_mispelling_words',
+# 			 'z_mispelling_words_rate','z_agreement_errors','z_agreement_errors_rate','words grade', 'sentences grade',
+# 			 'constituents grade','spelling grade','spelling grade rate','agreement_errors_grade',
+#  			 'agreement_errors_rate_grade','a','b','c','2ab','final_grade']].to_csv(
 #	'../output/final_grades.txt', 
 #	index=False)
 testing_df[['filename','final_grade']].to_csv(
