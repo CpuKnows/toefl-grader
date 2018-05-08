@@ -16,6 +16,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import string
 
+# Custom imports
+from tree_utils import *
+
 # Required libraries
 nltk.download('wordnet')
 nltk.download('punkt')
